@@ -1,32 +1,13 @@
 package uz.ilmnajot.school.service;
 
 import org.springframework.http.HttpEntity;
-import uz.ilmnajot.school.model.common.ApiResponse;
-import uz.ilmnajot.school.model.request.UserRequest;
+import org.springframework.stereotype.Service;
 
+@Service
 public interface UserService {
 
-//    LoginResponse addUser(UserRequest request);
+    HttpEntity<?> getAllUsers();
 
-    ApiResponse getUserById(Long userId);
+    HttpEntity<?> assignRoleToUser(Long roleId, Long userId, String authorization);
 
-    ApiResponse getUsers();
-
-    ApiResponse updateUser(Long userId, UserRequest request);
-
-    ApiResponse deleteUser(Long userId);
-
-    ApiResponse getUserByName(String username);
-
-    ApiResponse getUserByEmail(String email);
-
-    ApiResponse addUser(UserRequest request);
-
-    ApiResponse assignRoleToUser(Long roleId, Long userId);
-
-    ApiResponse removeRoleToUser(Long roleId, Long userId);
-
-    HttpEntity<?> getAllUser();
-
-//    LoginResponse addUser(UserRequest request);
 }

@@ -1,15 +1,16 @@
 package uz.ilmnajot.school.service;
 
-import uz.ilmnajot.school.model.common.ApiResponse;
-import uz.ilmnajot.school.model.request.LoginForm;
-import uz.ilmnajot.school.model.request.UserRequest;
+import org.springframework.http.HttpEntity;
+import org.springframework.stereotype.Service;
+import uz.ilmnajot.school.entity.Users;
+import uz.ilmnajot.school.payload.Login;
+import uz.ilmnajot.school.payload.Register;
 
-
+@Service
 public interface AuthService {
+    HttpEntity<?> login(Login login);
 
-    ApiResponse register(UserRequest form);
+    HttpEntity<?> register(Register register);
 
-//    LoginResponse addUser(UserRequest request);
-
-    ApiResponse authenticate(LoginForm form);
+    Users saveUser(Register register);
 }

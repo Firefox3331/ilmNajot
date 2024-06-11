@@ -1,116 +1,100 @@
 package uz.ilmnajot.school.service;
 
-import uz.ilmnajot.school.entity.Role;
-import uz.ilmnajot.school.entity.Users;
-import uz.ilmnajot.school.enums.Gender;
-import uz.ilmnajot.school.enums.RoleName;
-import uz.ilmnajot.school.enums.SchoolName;
-import uz.ilmnajot.school.exception.UserException;
-import uz.ilmnajot.school.model.common.ApiResponse;
-import uz.ilmnajot.school.model.request.LoginForm;
-import uz.ilmnajot.school.model.request.UserRequest;
-import uz.ilmnajot.school.model.response.LoginResponse;
-import uz.ilmnajot.school.model.response.UserResponse;
-import uz.ilmnajot.school.repository.RoleRepository;
-import uz.ilmnajot.school.repository.UserRepository;
-import uz.ilmnajot.school.security.config.AuditingAwareConfig;
-import uz.ilmnajot.school.security.jwt.JwtProvider;
-import org.modelmapper.ModelMapper;
-import org.springframework.http.HttpStatus;
+import org.apache.coyote.Response;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import uz.ilmnajot.school.entity.Roles;
+import uz.ilmnajot.school.entity.Users;
+import uz.ilmnajot.school.enums.Gender;
+import uz.ilmnajot.school.payload.Login;
+import uz.ilmnajot.school.payload.Register;
+import uz.ilmnajot.school.repository.RoleRepo;
+import uz.ilmnajot.school.repository.SchoolRepo;
+import uz.ilmnajot.school.repository.UserRepo;
+import uz.ilmnajot.school.service.jwt.JwtService;
 
-import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
-public class AuthServiceImpl implements AuthService {
+public class AuthServiceImpl implements AuthService{
+    @Autowired
+    UserRepo userRepo;
+    @Autowired
+    JwtService jwtService;
+    @Autowired
+    PasswordEncoder passwordEncoder;
+    @Autowired
+    SchoolRepo schoolRepo;
+    @Autowired
+    RoleRepo roleRepo;
+    @Autowired
+    AuthenticationManager authenticationManager;
 
-    private final UserRepository userRepository;
-
-    private final AuthenticationManager authenticationManager;
-
-    private final UserServiceImpl userService;
-
-    private final JwtProvider jwtProvider;
-
-    private final PasswordEncoder passwordEncoder;
-
-    private final ModelMapper modelMapper;
-    private final RoleRepository roleRepository;
-
-    public AuthServiceImpl(UserRepository userRepository, AuthenticationManager authenticationManager, UserServiceImpl userService, JwtProvider jwtProvider, PasswordEncoder passwordEncoder, ModelMapper modelMapper, RoleRepository roleRepository, RoleRepository roleRepository1) {
-        this.userRepository = userRepository;
-        this.authenticationManager = authenticationManager;
-        this.userService = userService;
-        this.jwtProvider = jwtProvider;
-        this.passwordEncoder = passwordEncoder;
-        this.modelMapper = modelMapper;
-        this.roleRepository = roleRepository1;
+    @Override
+    public HttpEntity<?> login(Login login) {
+        Optional<Users> userOpt = userRepo.findByEmail(login.username());
+        HashMap<String, String> response = new HashMap<>();
+        if(userOpt.isPresent()){
+            if(userOpt.get().isEnabled()){
+                authenticationManager.authenticate(
+                        new UsernamePasswordAuthenticationToken(
+                                login.username(), login.password()
+                        )
+                );
+                Users save = userRepo.save(userOpt.get());
+                response.put("token", jwtService.generateAccessToken(save));
+            }
+        }else{
+            response.put("message", "User not found!");
+        }
+        return ResponseEntity.ok(response);
     }
 
     @Override
-    public ApiResponse register(UserRequest request) {
-        Optional<Role> defaultRole = roleRepository.findByName("ROLE_USER");
-        Role role = defaultRole.orElseThrow(() -> new UserException("role has not been found", HttpStatus.NOT_FOUND));
-        Optional<Users> userByEmail = userRepository.findByEmail(request.getEmail());
-        if (userByEmail.isPresent()) {
-            throw new UserException("User is already exist", HttpStatus.CONFLICT);
+    public HttpEntity<?> register(Register register) {
+        HashMap<String, String> response = new HashMap<>();
+        Optional<Users> userByEmail = userRepo.findByEmail(register.email());
+        if (!register.email().isBlank()){
+            if(!userByEmail.isPresent()){
+                if(register.password().equals(register.rePassword())){
+                    Users user = saveUser(register);
+                    user.setRoles(List.of(roleRepo.findById(1L).get()));
+                    Users savedUser = userRepo.save(user);
+                    response.put("token", jwtService.generateAccessToken(savedUser));
+                }else{
+                    response.put("message", "Password did not match!");
+                }
+            }else {
+                response.put("message", "This email already exists!");
+            }
+        }else{
+            response.put("message", "Email did not match!");
         }
-
-        if (!checkPassword(request)) {
-            throw new UserException("Password does not match, please try again", HttpStatus.CONFLICT);
-        }
-        try {
-            AuditingAwareConfig.disableAuditing();
-            Users user = new Users();
-            user.setFirstName(request.getFirstName());
-            user.setLastName(request.getLastName());
-            user.setEmail(request.getEmail());
-            user.setPhoneNumber(request.getPhoneNumber());
-            user.setPosition(role.getName());
-            user.setSchoolName(SchoolName.SAMARKAND_PRESIDENTIAL_SCHOOL);
-            user.setRoles(Collections.singletonList(role));
-            user.setGender(request.getGender());
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
-            user.setEnabled(true);
-            Users savedUser = userRepository.save(user);
-            String token = jwtProvider.generateAccessToken(user);
-            LoginResponse loginResponse = new LoginResponse();
-            loginResponse.setToken(token);
-            UserResponse userResponse = modelMapper.map(savedUser, UserResponse.class);
-            return new ApiResponse("The User with username: " + request.getEmail() + " and user details are : " + userResponse + " has been registered successfully", true, loginResponse);
-        } finally {
-            AuditingAwareConfig.enableAuditing();
-        }
+        return ResponseEntity.ok(response);
     }
-
-    private boolean checkPassword(UserRequest request) {
-        String pass = request.getPassword();
-        String rePassword = request.getRePassword();
-        return pass.equals(rePassword);
-    }
-
 
     @Override
-    public ApiResponse authenticate(LoginForm form) {
-
-        try {
-            AuditingAwareConfig.enableAuditing();
-            authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(
-                    form.getEmail(),
-                    form.getPassword()
-            ));
-
-            var user = userRepository.findByEmail(form.getEmail()).orElseThrow();
-            String token = jwtProvider.generateAccessToken(user);
-            LoginResponse loginResponse = new LoginResponse();
-            loginResponse.setToken(token);
-            return new ApiResponse("the user with username " + form.getEmail() + " has been authenticated and Token has been generated successfully", true, loginResponse);
-        } finally {
-            AuditingAwareConfig.enableAuditing();
-        }
+    public Users saveUser(Register register) {
+        Users users = Users.builder()
+                .firstName(register.firstName())
+                .lastName(register.lastName())
+                .email(register.email())
+                .username(register.username())
+                .phoneNumber(register.phoneNumber())
+                .gender(Gender.valueOf(register.gender()))
+                .school(schoolRepo.findById(register.schoolId()).get())
+                .password(passwordEncoder.encode(register.password())).build();
+        if(register.id() != null) users.setId(register.id());
+        return users;
     }
+
+
 }
